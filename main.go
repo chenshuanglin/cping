@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 )
 
@@ -53,34 +55,15 @@ func main() {
 	flag.Parse()
 	signal.Notify(stop, os.Interrupt)
 
-	var icmp ICMP
-	icmp.Type = 8
-	icmp.Code = 0
-	icmp.Identifier = 0
-	icmp.SequenceNum = 0
-	var buffer bytes.Buffer
-	binary.Write(&buffer, binary.BigEndian, icmp)
-	icmp.Checksum = CheckSum(buffer.Bytes())
-
-	src := &net.IPAddr{IP: net.ParseIP(*s)}
-	dst := &net.IPAddr{IP: net.ParseIP(*d)}
-	cping := &Cping{
-		Icmp: icmp,
-		Src:  src,
-		Dst:  dst,
-	}
-
 	go PrintMessage()
 
 	if *c == 0 {
 		for {
-			cping.Send()
-			time.Sleep(500 * time.Millisecond)
+			Ping()
 		}
 	} else {
 		for i := 0; i < *c; i++ {
-			cping.Send()
-			time.Sleep(500 * time.Millisecond)
+			Ping()
 		}
 	}
 }
@@ -96,6 +79,13 @@ func PrintMessage() {
 			fmt.Printf("第%d次发送数据\n", number)
 		}
 	}
+}
+
+//获取cping对象，并每隔500ms，ping一次
+func Ping() {
+	cping := GetCping()
+	cping.Send()
+	time.Sleep(500 * time.Millisecond)
 }
 
 //获取连接，发送数据
@@ -138,4 +128,40 @@ func CheckSum(data []byte) uint16 {
 
 func ErrorMessage(s string) {
 	fmt.Fprint(os.Stderr, s)
+}
+
+//返回一个随机ip，go可以直接返回局部变量的指针
+func GetRandIp() *net.IPAddr {
+	ip := fmt.Sprintf("%d.%d.%d.%d", rand.Intn(254)+1, rand.Intn(254)+1, rand.Intn(254)+1, rand.Intn(254)+1)
+	return &net.IPAddr{IP: net.ParseIP(ip)}
+}
+
+//根据命令参数获取ip，会判断是否是随机
+func GetIP(str string) *net.IPAddr {
+	var ip *net.IPAddr
+	if strings.EqualFold(str, "rand") {
+		ip = GetRandIp()
+	} else {
+		ip = &net.IPAddr{IP: net.ParseIP(str)}
+	}
+	return ip
+}
+
+//获取一个Cping的对象
+func GetCping() *Cping {
+	var icmp ICMP
+	var buffer bytes.Buffer
+
+	icmp.Type = 8
+	icmp.Code = 0
+	icmp.Identifier = 0
+	icmp.SequenceNum = 0
+	binary.Write(&buffer, binary.BigEndian, icmp)
+	icmp.Checksum = CheckSum(buffer.Bytes())
+
+	return &Cping{
+		Icmp: icmp,
+		Src:  GetIP(*s),
+		Dst:  GetIP(*d),
+	}
 }
